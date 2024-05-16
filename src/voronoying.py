@@ -269,6 +269,9 @@ def main():
         for road in arcpy.da.SearchCursor(inroads_split_line, ['SHAPE@', 'OID@', 'SHAPE@LENGTH', inroads_identifier]):
             if (road[2] > 0):
                 lineIds.append(road[3])
+	    else (road[2] < 1):
+            	arcpy.AddWarning("Warning: Segment {} is smaller than 1".format(road[1]))
+	    
                 pv.AddSegment(
                     [
                         [
