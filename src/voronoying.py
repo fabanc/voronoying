@@ -153,7 +153,8 @@ def main():
         outpolygons = arcpy.GetParameterAsText(4)
         inroads_identifier = arcpy.GetParameterAsText(5)
         factor = int(arcpy.GetParameterAsText(6))   #New Parameter for the multiplier
-        outlines = arcpy.GetParameterAsText(7)
+        outlines = None if arcpy.GetParameterAsText(7) == "" else arcpy.GetParameterAsText(7)
+
         arcpy.env.workspace = outWorkspace
 
         ##################################################################################
@@ -314,8 +315,9 @@ def main():
                 for vIndex, v in enumerate(vertices):
                     cursor.insertRow([vIndex, v.X, v.Y])
 
-        arcpy.AddMessage("Construct output lines feature class")
-        if len(outlines) > 0:
+
+        if outlines is not None:
+            arcpy.AddMessage("Construct output lines feature class")
             arcpy.CreateFeatureclass_management(
                 outWorkspace,
                 outlines,
