@@ -153,6 +153,7 @@ def main():
         outpolygons = arcpy.GetParameterAsText(4)
         inroads_identifier = arcpy.GetParameterAsText(5)
         factor = int(arcpy.GetParameterAsText(6))   #New Parameter for the multiplier
+        outlines = arcpy.GetParameterAsText(7)
         arcpy.env.workspace = outWorkspace
 
         ##################################################################################
@@ -192,11 +193,17 @@ def main():
         ##################################################################################
         #REMOVE FEATURE CLASSES
         ##################################################################################
-        for fc in [
+        feature_classes_to_remove = [
             inroads_split,
             inroads_split_line,
             "{0}{1}{2}".format(outWorkspace, os.path.sep, outpoints),
-            "{0}{1}{2}".format(outWorkspace,os.path.sep,outpolygons)]:
+            "{0}{1}{2}".format(outWorkspace,os.path.sep,outpolygons)
+        ]
+
+        if outlines is not None:
+            feature_classes_to_remove.append("{0}{1}{2}".format(outWorkspace,os.path.sep,outlines))
+
+        for fc in feature_classes_to_remove:
             delFCByPath(fc)
 
 
@@ -307,6 +314,55 @@ def main():
                 for vIndex, v in enumerate(vertices):
                     cursor.insertRow([vIndex, v.X, v.Y])
 
+        arcpy.AddMessage("Construct output lines feature class")
+        if len(outlines) > 0:
+            arcpy.CreateFeatureclass_management(
+                outWorkspace,
+                outlines,
+                'POLYLINE',
+                spatial_reference=spatial_reference
+            )
+
+            arcpy.AddField_management(outlines, 'LINE_ID', "LONG")
+            arcpy.AddField_management(outlines, 'START', "LONG")
+            arcpy.AddField_management(outlines, 'END', "LONG")
+            arcpy.AddField_management(outlines, 'IS_PRIMARY', "LONG")
+            fields = ['LINE_ID','START','END','IS_PRIMARY', 'SHAPE@']
+
+            with arcpy.da.InsertCursor(outlines, fields) as cursor:
+                for eIndex, e in enumerate(edges):
+                    array = arcpy.Array()
+                    if eIndex % 5000 == 0 and eIndex > 0:
+                        arcpy.AddMessage("Edge Index: {0}".format(eIndex))
+                        # Function to draw edge
+                    startVertex = vertices[e.start]
+                    endVertex = vertices[e.end]
+
+                    if startVertex ==-1 or endVertex == -1:
+                        continue
+                        
+                    max_distance = Distance([startVertex.X, startVertex.Y], [endVertex.X, endVertex.Y]) / 10
+
+                    if e.is_linear:
+                        array.add(arcpy.Point(startVertex.X, startVertex.Y))
+                        array.add(arcpy.Point(endVertex.X, endVertex.Y))
+
+                    else:
+                        try:
+                            points = pv.DiscretizeCurvedEdge(eIndex, max_distance, 1 / factor)
+                            for p in points:
+                                array.append(arcpy.Point(p[0], p[1]))
+                        except pyvoronoi.FocusOnDirectixException:
+                            arcpy.AddMessage(
+                                "FocusOnDirectixException at: {5}. The drawing has been defaulted from a curved line to a straight line. Length {0} - From: {1}, {2} To: {3}, {4}".format(
+                                    max_distance, startVertex.X,
+                                    startVertex.Y, endVertex.X,
+                                    endVertex.Y, e))
+                            array.add(arcpy.Point(startVertex.X, startVertex.Y))
+                            array.add(arcpy.Point(endVertex.X, endVertex.Y))
+                    polyline = arcpy.Polyline(array)
+                    cursor.insertRow((eIndex, e.start, e.end, e.is_primary, polyline))
+
         arcpy.AddMessage("Construct output cells feature class")
         if len(outpolygons) > 0:
             arcpy.CreateFeatureclass_management(outWorkspace, outpolygons,'POLYGON', spatial_reference=spatial_reference)
@@ -326,7 +382,7 @@ def main():
 
                         array = arcpy.Array()
                         for i, value in enumerate(cell.edges):
-                            e = edges[value]
+                            e = pv.GetEdge(value)
                             startVertex = vertices[e.start]
                             endVertex = vertices[e.end]
                             max_distance  = Distance([startVertex.X, startVertex.Y], [endVertex.X, endVertex.Y]) / 10
@@ -373,6 +429,28 @@ def main():
             arcpy.AddError('GP ERRORS:\n%s\n' % gp_errors)
         raise (ex)
 
+# def drawEdge(vertices, e):
+#     startVertex = vertices[e.start]
+#     endVertex = vertices[e.end]
+#     max_distance = Distance([startVertex.X, startVertex.Y], [endVertex.X, endVertex.Y]) / 10
+#
+#     if e.is_linear:
+#         array.add(arcpy.Point(startVertex.X, startVertex.Y))
+#         array.add(arcpy.Point(endVertex.X, endVertex.Y))
+#
+#     else:
+#         try:
+#             points = pv.DiscretizeCurvedEdge(cell.edges[i], max_distance, 1 / factor)
+#             for p in points:
+#                 array.append(arcpy.Point(p[0], p[1]))
+#         except pyvoronoi.FocusOnDirectixException:
+#             arcpy.AddMessage(
+#                 "FocusOnDirectixException at: {5}. The drawing has been defaulted from a curved line to a straight line. Length {0} - From: {1}, {2} To: {3}, {4}".format(
+#                     max_distance, startVertex.X,
+#                     startVertex.Y, endVertex.X,
+#                     endVertex.Y, cell.edges[i]))
+#             array.add(arcpy.Point(startVertex.X, startVertex.Y))
+#             array.add(arcpy.Point(endVertex.X, endVertex.Y))
 
 if __name__ == '__main__':
     main()
