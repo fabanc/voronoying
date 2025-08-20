@@ -41,6 +41,7 @@ def report_errors(topo_path, prefix):
     :param: topo_path: the path to the topology file
     :param: workspace: the path to the workspace
     :param: prefix: the base name appended for export of error features
+    :return: dictionary of topology validation errors
     """
 
     arcpy.AddMessage(arcpy.GetMessages(0)) # NOTE: nothing at index 2 upon error
@@ -49,6 +50,7 @@ def report_errors(topo_path, prefix):
     arcpy.management.ExportTopologyErrors(topo_path, arcpy.env.workspace, prefix)
 
     error_count = 0
+    result = {}
     for vType in ["_line", "_point", "_poly"]:
         fc = (f"{prefix}{vType}")
         count = int(arcpy.management.GetCount(fc).getOutput(0))
@@ -59,11 +61,13 @@ def report_errors(topo_path, prefix):
                 type_count = int(arcpy.management.GetCount(sel).getOutput(0))
                 arcpy.AddMessage(f"{rt} errors: {type_count}")
                 arcpy.management.SelectLayerByAttribute(fc, "CLEAR_SELECTION")
+                result[rt] = type_count
 
         error_count += count
         arcpy.Delete_management(fc)
 
     arcpy.AddMessage(f"total topology errors: {error_count}")
+    return result
 
 def create_point_intersect(inpoints, inlines, out_points):
     """
@@ -105,7 +109,9 @@ def validate_topology(inpoints: str, inlines: str, factor: int, out_gdb: str):
     :param inlines: input lines feature class
     :param factor: scaling multiplier for coordinates
     :param out_gdb: full path for output geodatabase to create
+    :return: dictionary of topology validation errors
     """
+
     try:
         if inpoints is None or inlines is None or out_gdb is None or factor == 0:
             raise ValueError(f'invalid null input feature class')
@@ -120,7 +126,7 @@ def validate_topology(inpoints: str, inlines: str, factor: int, out_gdb: str):
         srp_str = srp.exportToString()
         srl_str = srl.exportToString()
         if srp_str != srl_str:
-            raise Exception('mismatched spatial reference')
+            raise ValueError('mismatched spatial reference')
 
         arcpy.AddMessage("generating dataset and topology")
 
@@ -148,7 +154,7 @@ def validate_topology(inpoints: str, inlines: str, factor: int, out_gdb: str):
         arcpy.AddMessage("validating topology")
         arcpy.management.ValidateTopology(topo_path)
 
-        report_errors(topo_path, "topoerrors")
+        return report_errors(topo_path, "topoerrors")
         
     except Exception as ex:
         tb = sys.exc_info()[2]
